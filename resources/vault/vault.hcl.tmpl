@@ -1,0 +1,32 @@
+# Vault server config for one node.  Variables: ${NODE_ID} ${NODE_IP} ${VAULT1_IP} ${VAULT2_IP} ${VAULT3_IP}
+ui            = true
+disable_mlock = true          # lab only (containers without IPC_LOCK)
+cluster_name  = "zt-lab"
+
+storage "raft" {
+  path    = "/vault/file"
+  node_id = "${NODE_ID}"
+
+  retry_join {
+    leader_api_addr     = "https://${VAULT1_IP}:8200"
+    leader_ca_cert_file = "/vault/tls/ca.crt"
+  }
+  retry_join {
+    leader_api_addr     = "https://${VAULT2_IP}:8200"
+    leader_ca_cert_file = "/vault/tls/ca.crt"
+  }
+  retry_join {
+    leader_api_addr     = "https://${VAULT3_IP}:8200"
+    leader_ca_cert_file = "/vault/tls/ca.crt"
+  }
+}
+
+listener "tcp" {
+  address         = "0.0.0.0:8200"
+  cluster_address = "0.0.0.0:8201"
+  tls_cert_file   = "/vault/tls/vault.crt"
+  tls_key_file    = "/vault/tls/vault.key"
+}
+
+api_addr     = "https://${NODE_IP}:8200"
+cluster_addr = "https://${NODE_IP}:8201"

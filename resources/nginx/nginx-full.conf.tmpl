@@ -1,0 +1,24 @@
+# Stage 2: Vault + app front door (TLS passthrough to both Istio ingress gateways).
+# Variables: ${VAULT1_IP} ${VAULT2_IP} ${VAULT3_IP} ${VAULT_PORT} ${C1_INGRESS_IP} ${C2_INGRESS_IP}
+worker_processes auto;
+events {}
+stream {
+  upstream vault_cluster {
+    server ${VAULT1_IP}:8200 max_fails=2 fail_timeout=10s;
+    server ${VAULT2_IP}:8200 max_fails=2 fail_timeout=10s;
+    server ${VAULT3_IP}:8200 max_fails=2 fail_timeout=10s;
+  }
+  server { listen ${VAULT_PORT}; proxy_pass vault_cluster; }
+
+  upstream kanban_https {
+    server ${C1_INGRESS_IP}:443 max_fails=2 fail_timeout=10s;
+    server ${C2_INGRESS_IP}:443 max_fails=2 fail_timeout=10s;
+  }
+  server { listen 443; proxy_pass kanban_https; }
+
+  upstream kanban_http {
+    server ${C1_INGRESS_IP}:80;
+    server ${C2_INGRESS_IP}:80;
+  }
+  server { listen 80; proxy_pass kanban_http; }
+}

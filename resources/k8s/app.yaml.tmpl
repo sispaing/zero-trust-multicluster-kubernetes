@@ -1,0 +1,134 @@
+# Kanban application: frontend (Kanban-UI) + backend (Kanban-App) in namespace "kanban".
+# Variables filled in by 09-app.sh: ${CLUSTER_NAME} ${PG_IP} ${VAULT_LB_IP} ${APP_IMAGE} ${NGINX_IMAGE}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: kanban-app, namespace: kanban}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: kanban-ui, namespace: kanban}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kanban-app, namespace: kanban, labels: {app: kanban-app}}
+spec:
+  selector: {app: kanban-app}
+  ports: [{name: http, port: 8000, targetPort: 8000}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kanban-ui, namespace: kanban, labels: {app: kanban-ui}}
+spec:
+  selector: {app: kanban-ui}
+  ports: [{name: http, port: 8080, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kanban-app, namespace: kanban}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: kanban-app}}
+  template:
+    metadata:
+      labels: {app: kanban-app, version: v1}
+      annotations:
+        # ---- Vault Agent: fetch short-lived DB credentials and keep them fresh ----
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "kanban-app"
+        vault.hashicorp.com/auth-path: "auth/kubernetes-${CLUSTER_NAME}"
+        vault.hashicorp.com/tls-secret: "vault-ca"
+        vault.hashicorp.com/ca-cert: "/vault/tls/ca.crt"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "database/creds/kanban-app"
+        vault.hashicorp.com/agent-inject-perms-db-creds: "0644"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "database/creds/kanban-app" -}}
+          DB_USER={{ .Data.username }}
+          DB_PASS={{ .Data.password }}
+          {{- end }}
+        # Vault traffic is already TLS; let the Vault Agent init container reach Vault
+        # before the Envoy sidecar is running.
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "${VAULT_LB_IP}/32"
+    spec:
+      serviceAccountName: kanban-app
+      containers:
+        - name: kanban-app
+          image: ${APP_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8000}]
+          env:
+            - {name: CLUSTER_NAME, value: "${CLUSTER_NAME}"}
+            - {name: DB_HOST, value: "${PG_IP}"}
+          volumeMounts: [{name: db-ca, mountPath: /etc/db-ca, readOnly: true}]
+          readinessProbe: {httpGet: {path: /api/health, port: 8000}, periodSeconds: 5}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 256Mi}}
+      volumes:
+        - name: db-ca
+          configMap: {name: db-ca}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kanban-ui, namespace: kanban}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: kanban-ui}}
+  template:
+    metadata:
+      labels: {app: kanban-ui, version: v1}
+    spec:
+      serviceAccountName: kanban-ui
+      containers:
+        - name: kanban-ui
+          image: ${NGINX_IMAGE}
+          ports: [{containerPort: 8080}]
+          volumeMounts:
+            - {name: html, mountPath: /usr/share/nginx/html, readOnly: true}
+            - {name: conf, mountPath: /etc/nginx/conf.d, readOnly: true}
+          readinessProbe: {httpGet: {path: /, port: 8080}, periodSeconds: 5}
+          resources: {requests: {cpu: 20m, memory: 32Mi}, limits: {memory: 128Mi}}
+      volumes:
+        - name: html
+          configMap: {name: kanban-ui-html}
+        - name: conf
+          configMap: {name: kanban-ui-nginx}
+---
+# PostgreSQL lives outside the mesh. With REGISTRY_ONLY egress, it must be registered explicitly.
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata: {name: kanban-postgres, namespace: kanban}
+spec:
+  hosts: [kanban-postgres.external]
+  addresses: ["${PG_IP}/32"]
+  ports: [{number: 5432, name: tcp-postgres, protocol: TCP}]
+  location: MESH_EXTERNAL
+  resolution: STATIC
+  endpoints: [{address: "${PG_IP}"}]
+---
+# Locality-aware load balancing: prefer the backend in the same cluster/zone,
+# fail over to the other cluster when local endpoints are unhealthy or gone.
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata: {name: kanban-app, namespace: kanban}
+spec:
+  host: kanban-app.kanban.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+      localityLbSetting: {enabled: true}
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 5s
+      baseEjectionTime: 30s
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata: {name: kanban-ui, namespace: kanban}
+spec:
+  host: kanban-ui.kanban.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+      localityLbSetting: {enabled: true}
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 5s
+      baseEjectionTime: 30s

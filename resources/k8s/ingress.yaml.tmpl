@@ -1,0 +1,37 @@
+# Variable: ${APP_HOST}
+# HTTPS entry point. The certificate is issued by Vault PKI through cert-manager.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: kanban-tls, namespace: istio-ingress}
+spec:
+  secretName: kanban-tls
+  dnsNames: ["${APP_HOST}"]
+  duration: 24h
+  renewBefore: 8h
+  privateKey: {rotationPolicy: Always}
+  issuerRef: {name: vault-issuer, kind: ClusterIssuer, group: cert-manager.io}
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata: {name: kanban-gateway, namespace: istio-ingress}
+spec:
+  selector: {istio: ingressgateway}
+  servers:
+    - port: {number: 443, name: https, protocol: HTTPS}
+      tls: {mode: SIMPLE, credentialName: kanban-tls}
+      hosts: ["${APP_HOST}"]
+    - port: {number: 80, name: http, protocol: HTTP}
+      tls: {httpsRedirect: true}
+      hosts: ["${APP_HOST}"]
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: {name: kanban, namespace: kanban}
+spec:
+  hosts: ["${APP_HOST}"]
+  gateways: [istio-ingress/kanban-gateway]
+  http:
+    - route:
+        - destination:
+            host: kanban-ui.kanban.svc.cluster.local
+            port: {number: 8080}

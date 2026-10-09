@@ -1,0 +1,8 @@
+# Send 100% of traces to Jaeger (lab only; production would sample less).
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata: {name: mesh-default, namespace: istio-system}
+spec:
+  tracing:
+    - providers: [{name: jaeger}]
+      randomSamplingPercentage: 100

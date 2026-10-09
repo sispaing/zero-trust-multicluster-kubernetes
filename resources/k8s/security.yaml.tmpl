@@ -1,0 +1,86 @@
+# Variables: ${LB_CIDR} ${PG_IP} ${VAULT_LB_IP}
+# =====================================================================
+# Layer 7 - Istio authorization (identity based, default deny)
+# =====================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: allow-nothing, namespace: kanban}
+spec: {}          # empty policy = deny everything not explicitly allowed below
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: kanban-ui-from-ingress, namespace: kanban}
+spec:
+  selector: {matchLabels: {app: kanban-ui}}
+  action: ALLOW
+  rules:
+    - from: [{source: {principals: ["cluster.local/ns/istio-ingress/sa/istio-ingressgateway"]}}]
+      to: [{operation: {methods: ["GET", "POST", "PUT", "DELETE"]}}]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: kanban-app-from-ui, namespace: kanban}
+spec:
+  selector: {matchLabels: {app: kanban-app}}
+  action: ALLOW
+  rules:
+    - from: [{source: {principals: ["cluster.local/ns/kanban/sa/kanban-ui"]}}]
+      to: [{operation: {methods: ["GET", "POST", "PUT", "DELETE"], paths: ["/api/*"]}}]
+---
+# =====================================================================
+# Layer 3/4 - Kubernetes NetworkPolicy enforced by Calico (defence in depth)
+# Variables: ${LB_CIDR} ${PG_IP} ${VAULT_LB_IP}
+# =====================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-all, namespace: kanban}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-mesh-infrastructure, namespace: kanban}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # east-west gateway (traffic from the other cluster) and Prometheus scraping
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: istio-system}}}]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    # istiod (config) and istio-csr (workload certificates)
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: istio-system}}}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cert-manager}}}]
+    # remote cluster east-west gateway (cross-cluster mTLS)
+    - to: [{ipBlock: {cidr: "${LB_CIDR}"}}]
+      ports: [{protocol: TCP, port: 15443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: kanban-ui, namespace: kanban}
+spec:
+  podSelector: {matchLabels: {app: kanban-ui}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: istio-ingress}}}]
+      ports: [{protocol: TCP, port: 8080}]
+  egress:
+    - to: [{podSelector: {matchLabels: {app: kanban-app}}}]
+      ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: kanban-app, namespace: kanban}
+spec:
+  podSelector: {matchLabels: {app: kanban-app}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: kanban-ui}}}]
+      ports: [{protocol: TCP, port: 8000}]
+  egress:
+    - to: [{ipBlock: {cidr: "${PG_IP}/32"}}]
+      ports: [{protocol: TCP, port: 5432}]
+    - to: [{ipBlock: {cidr: "${VAULT_LB_IP}/32"}}]
+      ports: [{protocol: TCP, port: 8443}]

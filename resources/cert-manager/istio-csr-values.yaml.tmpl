@@ -1,0 +1,16 @@
+# Helm values for cert-manager-istio-csr.  Variable: ${CLUSTER_NAME}
+# istio-csr replaces Istio's built-in CA: every workload certificate is signed by Vault.
+app:
+  certmanager:
+    namespace: istio-system
+    issuer: {name: vault-issuer, kind: ClusterIssuer, group: cert-manager.io}
+  tls:
+    rootCAFile: /var/run/secrets/istio-csr/ca.pem
+    trustDomain: cluster.local
+  server:
+    clusterID: ${CLUSTER_NAME}
+volumeMounts:
+  - {name: root-ca, mountPath: /var/run/secrets/istio-csr}
+volumes:
+  - name: root-ca
+    secret: {secretName: istio-root-ca}

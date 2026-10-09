@@ -1,0 +1,10 @@
+# KinD cluster definition.  Variables: ${CLUSTER_NAME} ${POD_CIDR} ${SVC_CIDR}
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ${CLUSTER_NAME}
+networking:
+  disableDefaultCNI: true        # Calico replaces kindnet (kindnet does not enforce NetworkPolicy)
+  podSubnet: ${POD_CIDR}
+  serviceSubnet: ${SVC_CIDR}
+nodes:
+  - role: control-plane

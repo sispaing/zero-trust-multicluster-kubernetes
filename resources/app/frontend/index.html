@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kanban - Zero Trust Lab</title>
+<style>
+  :root { --blue:#1f4e79; --bg:#f4f6f9; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background: var(--bg); color:#222; }
+  header { background: var(--blue); color:#fff; padding: 16px 24px; }
+  header h1 { margin:0; font-size: 20px; }
+  #info { font-size: 13px; opacity: .9; margin-top: 4px; }
+  main { padding: 20px 24px; }
+  form { display:flex; gap:8px; margin-bottom: 18px; }
+  input { flex:1; padding:8px; border:1px solid #bbb; border-radius:6px; }
+  button { padding:8px 12px; border:0; border-radius:6px; background: var(--blue); color:#fff; cursor:pointer; }
+  button.small { padding:3px 8px; font-size:12px; background:#5b7fa6; }
+  button.del { background:#b03a2e; }
+  .board { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; }
+  .col { background:#fff; border-radius:8px; padding:12px; min-height:200px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .col h2 { font-size:15px; margin:0 0 10px; color: var(--blue); }
+  .card { border:1px solid #dde3ea; border-radius:6px; padding:8px; margin-bottom:8px; }
+  .card .actions { margin-top:6px; display:flex; gap:4px; }
+  #error { color:#b03a2e; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kanban Board - Zero Trust Kubernetes Lab</h1>
+  <div id="info">Loading...</div>
+</header>
+<main>
+  <div id="error"></div>
+  <form id="add">
+    <input id="title" placeholder="New task title" required>
+    <button type="submit">Add task</button>
+  </form>
+  <div class="board">
+    <div class="col" data-status="todo"><h2>To Do</h2><div class="list"></div></div>
+    <div class="col" data-status="doing"><h2>Doing</h2><div class="list"></div></div>
+    <div class="col" data-status="done"><h2>Done</h2><div class="list"></div></div>
+  </div>
+</main>
+<script>
+const order = ["todo", "doing", "done"];
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? {"Content-Type": "application/json"} : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(method + " " + path + " failed: " + res.status + " " + await res.text());
+  return res.json();
+}
+
+function card(task) {
+  const div = document.createElement("div");
+  div.className = "card";
+  const title = document.createElement("div");
+  title.textContent = task.title;
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const i = order.indexOf(task.status);
+  if (i > 0) actions.append(button("<", () => move(task.id, order[i - 1])));
+  if (i < 2) actions.append(button(">", () => move(task.id, order[i + 1])));
+  const del = button("Delete", () => remove(task.id));
+  del.classList.add("del");
+  actions.append(del);
+  div.append(title, actions);
+  return div;
+}
+
+function button(text, onClick) {
+  const b = document.createElement("button");
+  b.className = "small";
+  b.textContent = text;
+  b.onclick = onClick;
+  return b;
+}
+
+async function load() {
+  try {
+    const data = await api("GET", "/api/tasks");
+    document.getElementById("error").textContent = "";
+    document.getElementById("info").textContent =
+      "Served by backend in " + data.cluster + "  |  Database user (issued by Vault): " + data.db_user;
+    document.querySelectorAll(".col").forEach(col => {
+      const list = col.querySelector(".list");
+      list.innerHTML = "";
+      data.tasks.filter(t => t.status === col.dataset.status).forEach(t => list.append(card(t)));
+    });
+  } catch (e) {
+    document.getElementById("error").textContent = e.message;
+  }
+}
+
+async function move(id, status) { await api("PUT", "/api/tasks/" + id, {status}); load(); }
+async function remove(id) { await api("DELETE", "/api/tasks/" + id); load(); }
+
+document.getElementById("add").onsubmit = async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("title");
+  await api("POST", "/api/tasks", {title: input.value});
+  input.value = "";
+  load();
+};
+
+load();
+setInterval(load, 5000);
+</script>
+</body>
+</html>

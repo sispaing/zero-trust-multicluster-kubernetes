@@ -1,0 +1,15 @@
+# Helm values for istiod.  Variables: ${MESH_ID} ${CLUSTER_NAME} ${NETWORK}
+global:
+  meshID: ${MESH_ID}
+  multiCluster: {clusterName: ${CLUSTER_NAME}}
+  network: ${NETWORK}
+  caAddress: cert-manager-istio-csr.cert-manager.svc:443   # certs come from istio-csr -> Vault
+pilot:
+  env:
+    ENABLE_CA_SERVER: "false"                              # turn off Istio's built-in CA
+meshConfig:
+  accessLogFile: /dev/stdout
+  outboundTrafficPolicy: {mode: REGISTRY_ONLY}             # block egress to unknown destinations
+  extensionProviders:
+    - name: jaeger
+      zipkin: {service: zipkin.istio-system.svc.cluster.local, port: 9411}

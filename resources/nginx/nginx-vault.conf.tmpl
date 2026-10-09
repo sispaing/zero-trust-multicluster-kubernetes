@@ -1,0 +1,11 @@
+# Stage 1: Nginx only load-balances Vault.  Variables: ${VAULT1_IP} ${VAULT2_IP} ${VAULT3_IP} ${VAULT_PORT}
+worker_processes auto;
+events {}
+stream {
+  upstream vault_cluster {
+    server ${VAULT1_IP}:8200 max_fails=2 fail_timeout=10s;
+    server ${VAULT2_IP}:8200 max_fails=2 fail_timeout=10s;
+    server ${VAULT3_IP}:8200 max_fails=2 fail_timeout=10s;
+  }
+  server { listen ${VAULT_PORT}; proxy_pass vault_cluster; }
+}

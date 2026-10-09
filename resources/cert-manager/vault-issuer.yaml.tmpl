@@ -1,0 +1,35 @@
+# Vault ClusterIssuer.  Variables: ${CLUSTER_NAME} ${VAULT_ADDR_EXT} ${VAULT_TLS_CA_B64}
+# Service account that cert-manager uses to log in to Vault (Kubernetes auth).
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: vault-issuer, namespace: cert-manager}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: vault-issuer-token, namespace: cert-manager}
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["vault-issuer"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: vault-issuer-token, namespace: cert-manager}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: vault-issuer-token}
+subjects: [{kind: ServiceAccount, name: cert-manager, namespace: cert-manager}]
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata: {name: vault-issuer}
+spec:
+  vault:
+    server: ${VAULT_ADDR_EXT}
+    path: pki_int/sign/mesh
+    caBundle: ${VAULT_TLS_CA_B64}
+    auth:
+      kubernetes:
+        role: cert-manager
+        mountPath: /v1/auth/kubernetes-${CLUSTER_NAME}
+        serviceAccountRef:
+          name: vault-issuer
