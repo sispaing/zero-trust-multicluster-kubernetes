@@ -1,4 +1,4 @@
-# Zero Trust Kubernetes Lab: Istio Multi-Cluster Mesh with HashiCorp Vault
+# Zero Trust Multi-Cluster Kubernetes: Istio Service Mesh with HashiCorp Vault
 
 This is the artefact for the project *Investigation into Zero Trust Networking for Securing Distributed Kubernetes Applications*.
 It builds the full architecture on one Linux machine. Everything runs in Docker:
