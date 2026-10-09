@@ -7,9 +7,9 @@ It builds the full architecture on one Linux machine. Everything runs in Docker:
 - an Nginx load balancer
 - PostgreSQL
 
-![Architecture](docs/architecture.png)
+![Architecture](docs/Architecture-Diagram.png)
 
-> Open `docs/zero-trust-istio-architecture.excalidraw` at excalidraw.com to edit the diagram. Export it as `docs/architecture.png` to show it above.
+> Open `docs/Teesside-Computing-Project.excalidraw` at excalidraw.com to edit the diagram. Export it as `docs/Architecture-Diagram.png` to show it above.
 
 ## Repository layout
 
